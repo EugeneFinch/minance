@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* Remove Matrix Theme and set Binance style colors */
+:root {
+  --color-bg: #fff;
+  --color-bg-secondary: #f7f7f7;
+  --color-accent: #f0b90b;
+  --color-accent-dark: #c99400;
+  --color-text: #181a20;
+  --color-text-secondary: #707a8a;
+  --color-danger: #f6465d;
+  --color-success: #0ecb81;
+}
+
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0a0a0a;
+    --color-bg-secondary: #181c1b;
+    --color-accent: #00ff41;
+    --color-accent-dark: #008f11;
+    --color-text: #ededed;
+    --color-text-secondary: #7fffd4;
+    --color-danger: #ff0055;
+    --color-warning: #ffea00;
+  }
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Share Tech Mono', 'Fira Mono', 'Consolas', monospace;
+}
+
+button, .btn {
+  background: var(--color-accent);
+  color: #181a20;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  box-shadow: 0 2px 8px #f0b90b22;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+button:hover, .btn:hover {
+  background: var(--color-accent-dark);
+  color: #fff;
+  box-shadow: 0 4px 16px #f0b90b44;
+}
+
+input, textarea, select {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  border: 1.5px solid #eaecef;
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 0.5em 1em;
+}
+
+.card, .panel {
+  background: var(--color-bg-secondary);
+  border: 1.5px solid #eaecef;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px #eaecef33;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #eaecef;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
