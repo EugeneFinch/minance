@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+python-binance
+# Add any other dependencies your backend uses here 
