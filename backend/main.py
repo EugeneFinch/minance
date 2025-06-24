@@ -13,7 +13,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Only allow your frontend
+    allow_origins=[
+        "http://localhost:3000",
+        "https://minance-ashen.vercel.app"
+    ],  # Allow local dev and Vercel prod frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
