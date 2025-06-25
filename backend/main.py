@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from binance.client import Client
 import asyncio
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +41,11 @@ class BuyRequest(BaseModel):
     api_key: str
     api_secret: str
     buy: List[dict]  # Each dict: {symbol: str, amount: float}
+
+class PriceRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    symbols: Optional[list[str]] = None  # List of asset symbols to fetch prices for
 
 def adjust_to_integer(amount):
     return int(math.floor(amount))
@@ -298,5 +303,22 @@ def buy_assets(data: BuyRequest):
         return {"results": results}
     except Exception as e:
         print(f"[FATAL ERROR] /buy endpoint: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/prices")
+def get_prices(data: PriceRequest):
+    try:
+        client = Client(api_key=data.api_key, api_secret=data.api_secret)
+        prices = {p['symbol']: float(p['price']) for p in client.get_all_tickers()}
+        result = []
+        symbols = data.symbols or []
+        for symbol in symbols:
+            if symbol == 'USDT':
+                result.append({'symbol': 'USDT', 'price': 1.0})
+                continue
+            price = get_price_with_fallback(symbol, prices)
+            result.append({'symbol': symbol, 'price': price})
+        return result
+    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

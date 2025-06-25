@@ -98,6 +98,17 @@ Use AI agent to:
 	•	Security: Encrypt API keys (AES) or use ephemeral sessions
 	•	Binance API: REST + WebSocket (optional for real-time)
 
+# Implementation Status (as of current build)
+
+**Summary:**
+- Core portfolio viewer, sell (nuke), and buy back flows are implemented and functional.
+- Realized P&L, asset selection, confirmation modals, and local/session storage are implemented.
+- UI is modern and responsive for desktop, but mobile responsiveness and some polish are still missing.
+- Security is limited to local/session storage; no encryption or wallet signature gating yet.
+- No persistent backend DB for trades (localStorage only). No CSV export, charting, or onboarding.
+
+---
+
 ## Implementation Checklist (as of backend/main.py)
 
 ### Phase 1 — MVP: Portfolio Viewer
@@ -107,43 +118,44 @@ Use AI agent to:
   - [x] Fetches spot wallet balances
   - [x] Joins with live price feed (via Binance /ticker/price)
   - [x] Returns enriched asset list to frontend
-- [ ] Frontend (React/Next.js preferred):
-  - [x] Simple UI to input API key/secret
-  - [x ] Basic asset list (symbol, amount, current price, value in USDT)
-  - [ ] Optional: P&L stubbed (zeroed)
-- [ ] Security:
-  - [ ] Temporarily store API key in memory or encrypt per session
+- [x] Frontend (React/Next.js):
+  - [x] Simple UI to input API key/secret (with local/session storage)
+  - [x] Basic asset list (symbol, amount, current price, value in USDT)
+  - [x] Realized P&L (from buy-back trades)
+- [~] Security:
+  - [~] Temporarily store API key in memory or encrypt per session (currently only sessionStorage, not encrypted)
   - [ ] Later: persist encrypted w/ user wallet signature gating
 
 ### Phase 2 — Sell (“NuGet”)
-- [ ] Checkbox selection on portfolio screen
-- [ ] Sell (“NuGet”) Button — triggers:
-  - [ ] Market sell of all selected assets
-  - [ ] Records: symbol, sell price, quantity sold, timestamp
-- [ ] Backend Changes:
-  - [ ] /sell endpoint
-  - [ ] Validates Binance API keys
-  - [ ] Loops over selected symbols
-  - [ ] Executes market order via /api/v3/order
-  - [ ] Stores sale metadata in lightweight DB
+- [x] Checkbox selection on portfolio screen
+- [x] Sell (“NuGet”) Button — triggers:
+  - [x] Market sell of all selected assets
+  - [x] Records: symbol, sell price, quantity sold, timestamp (in localStorage)
+- [x] Backend Changes:
+  - [x] /sell endpoint
+  - [x] Validates Binance API keys
+  - [x] Loops over selected symbols
+  - [x] Executes market order via /api/v3/order
+  - [ ] Stores sale metadata in lightweight DB (currently only localStorage on frontend)
 
 ### Phase 3 — Buy It Back
-- [ ] “Buy It Back” tab/button
-- [ ] Shows assets not yet bought back, original sell price, quantity, current price, calculated P&L
-- [ ] User selects which to repurchase
-- [ ] Executes market buy
-- [ ] Updates entry as “repurchased”
-- [ ] Backend: /buyback endpoint
-  - [ ] Fetches active sell logs
-  - [ ] Executes market buy
-  - [ ] Marks buyback done, logs timestamp + price
+- [x] “Buy It Back” button/flow
+- [x] Shows assets not yet bought back, original sell price, quantity, current price, calculated P&L
+- [x] User selects which to repurchase
+- [x] Executes market buy
+- [x] Updates entry as “repurchased” (removes from localStorage, updates realized P&L)
+- [x] Backend: /buy endpoint (named /buy, not /buyback)
+  - [x] Executes market buy
+  - [x] Returns buy result
+  - [ ] Fetches active sell logs (handled on frontend only)
+  - [ ] Marks buyback done, logs timestamp + price (handled on frontend only)
 
 ### Phase 4 — Realized P&L
-- [ ] Show summary of user profit/loss across all trades
-  - [ ] List of completed round-trips (sold + bought)
-  - [ ] Realized P&L: sum of all P&Ls
-  - [ ] Basic charting (optional)
-  - [ ] Export as CSV (optional)
+- [x] Show summary of user profit/loss across all trades (realized P&L)
+  - [x] List of completed round-trips (sold + bought)
+  - [x] Realized P&L: sum of all P&Ls
+  - [ ] Basic charting (not implemented)
+  - [ ] Export as CSV (not implemented)
 
 ## Updated Frontend Flow & Requirements
 
@@ -167,12 +179,37 @@ The following user flow and UI requirements are based on the latest design direc
    - Large, prominent button to trigger repurchasing previously sold assets.
    - User can select which assets to buy back.
 
-### UI/UX Requirements
-- Modern, dark-themed dashboard (see screenshots for style reference).
-- Responsive layout for desktop and mobile.
-- Clear feedback for loading, errors, and successful actions.
-- Security notice: API credentials are stored locally and never shared.
-- (Optional) Show/hide API secret input.
+### UI/UX Requirements (Binance Style)
+
+- **Color Scheme:**
+  - White background throughout the app
+  - Black primary text for all content
+  - Yellow (#f0b90b) buttons with black text (hover: darker yellow)
+  - Use yellow highlights for accents and important actions
+- **Layout:**
+  - Modern, card-based dashboard layout
+  - Use rounded corners and subtle shadows for cards and modals
+  - Tabs and sections should be visually separated with cards or borders
+- **Buttons:**
+  - Large, prominent yellow buttons for primary actions (Sell, Buy Back, Connect)
+  - Black text on yellow buttons for maximum contrast
+  - Rounded corners and bold font for all buttons
+- **Typography:**
+  - Use bold, clear, sans-serif or mono fonts for headings and numbers
+  - All text should be black for readability
+- **Responsiveness:**
+  - Responsive layout for desktop and mobile
+  - Cards and buttons should scale and stack appropriately on smaller screens
+- **Feedback:**
+  - Clear feedback for loading, errors, and successful actions
+  - Use yellow or red highlights for warnings/errors
+- **Security Notice:**
+  - Display a clear notice that API credentials are stored locally and never shared
+- **Other:**
+  - Optionally, allow user to show/hide API secret input
+  - Footer should be fixed, black background with white or yellow text
+
+> All UI elements should follow the Binance visual language: white backgrounds, black text, yellow highlights, and a clean, modern look.
 
 ---
 

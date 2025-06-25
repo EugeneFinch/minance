@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
 function ConfirmModal({ open, onConfirm, onCancel, assetCount }: { open: boolean, onConfirm: () => void, onCancel: () => void, assetCount: number }) {
   if (!open) return null;
   return (
@@ -13,8 +15,8 @@ function ConfirmModal({ open, onConfirm, onCancel, assetCount }: { open: boolean
           Do you want to proceed?
         </div>
         <div className="flex gap-4 w-full justify-center">
-          <button className="btn bg-red-600 text-white font-bold py-2 px-6 rounded shadow-md hover:bg-red-700" onClick={onConfirm}>Yes, Sell</button>
-          <button className="btn bg-gray-700 text-white font-bold py-2 px-6 rounded shadow-md hover:bg-gray-600" onClick={onCancel}>Cancel</button>
+          <button className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-6 rounded shadow-md" onClick={onConfirm}>Yes, Sell</button>
+          <button className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-6 rounded shadow-md" onClick={onCancel}>Cancel</button>
         </div>
       </div>
     </div>
@@ -61,8 +63,10 @@ export default function Home() {
 
   // Minance header
   const header = (
-    <header className="w-full flex flex-row items-center justify-center py-6 mb-2 bg-white">
-      <span className="text-3xl font-extrabold tracking-widest text-black drop-shadow-sm" style={{ letterSpacing: '0.1em' }}>Minance</span>
+    <header className="w-full flex flex-row items-center justify-center py-10 mb-6 bg-transparent">
+      <span className="text-5xl font-extrabold tracking-widest text-black drop-shadow-sm" style={{ letterSpacing: '0.12em' }}>
+        Minance
+      </span>
     </header>
   );
 
@@ -74,7 +78,8 @@ export default function Home() {
       setApiKey(storedKey);
       setApiSecret(storedSecret);
       setConnected(true);
-      // Optionally, auto-fetch portfolio here
+      handleRefreshPortfolio();
+      handleRefreshLiquidatedPrices();
     }
   }, []);
 
@@ -82,8 +87,8 @@ export default function Home() {
   useEffect(() => {
     const sold = localStorage.getItem("soldPortfolio");
     if (sold) setSoldPortfolio(JSON.parse(sold));
-    const pl = localStorage.getItem("realizedPL");
-    if (pl) setRealizedPL(parseFloat(pl));
+    const pl = parseFloat(localStorage.getItem("realizedPL") || "0");
+    setRealizedPL(isNaN(pl) ? 0 : pl);
   }, []);
 
   // Fetch current prices for sold assets when Buy Back modal opens
@@ -91,7 +96,7 @@ export default function Home() {
     if (!showBuyBack || soldPortfolio.length === 0) return;
     const fetchPrices = async () => {
       try {
-        const res = await fetch("http://localhost:8000/balance", {
+        const res = await fetch(`${API_URL}/balance`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
@@ -114,7 +119,7 @@ export default function Home() {
     try {
       sessionStorage.setItem("binance_api_key", apiKey);
       sessionStorage.setItem("binance_api_secret", apiSecret);
-      const res = await fetch("http://localhost:8000/balance", {
+      const res = await fetch(`${API_URL}/balance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
@@ -129,6 +134,8 @@ export default function Home() {
       setPortfolio(filtered);
       setTotalValue(filtered.reduce((sum: number, a: any) => sum + a.value_usdt, 0));
       setConnected(true);
+      await handleRefreshPortfolio();
+      await handleRefreshLiquidatedPrices();
     } catch (e: any) {
       setError(e.message || "Unknown error");
     } finally {
@@ -141,7 +148,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:8000/balance", {
+      const res = await fetch(`${API_URL}/balance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
@@ -151,11 +158,14 @@ export default function Home() {
         throw new Error(err.detail || "Failed to fetch portfolio");
       }
       const data = await res.json();
+      console.log("[DEBUG] /balance API response:", data);
       const filtered = data.filter((a: any) => a.value_usdt >= 5);
+      console.log("[DEBUG] Filtered portfolio:", filtered);
       setPortfolio(filtered);
       setTotalValue(filtered.reduce((sum: number, a: any) => sum + a.value_usdt, 0));
     } catch (e: any) {
       setError(e.message || "Unknown error");
+      console.error("[DEBUG] handleRefreshPortfolio error:", e);
     } finally {
       setLoading(false);
     }
@@ -163,7 +173,7 @@ export default function Home() {
 
   function startNukeSelection() {
     setSelectMode(true);
-    setSelectedAssets(portfolio.map((a: any) => a.symbol)); // all selected by default
+    setSelectedAssets(portfolio.filter((a: any) => a.symbol !== 'USDT').map((a: any) => a.symbol)); // only non-USDT selected by default
     setNukeResult([]);
   }
 
@@ -187,13 +197,13 @@ export default function Home() {
     try {
       // Prepare sell payload: round to integer if price < $1
       const sellPayload = portfolio
-        .filter((a: any) => selectedAssets.includes(a.symbol))
+        .filter((a: any) => selectedAssets.includes(a.symbol) && a.symbol !== 'USDT')
         .map((a: any) => ({
           symbol: a.symbol,
           amount: a.price < 1 ? Math.floor(a.amount) : a.amount
         }));
       // Send symbols and amounts to backend
-      const res = await fetch("http://localhost:8000/sell", {
+      const res = await fetch(`${API_URL}/sell`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -210,15 +220,24 @@ export default function Home() {
       setNukeResult(data.results || []);
       setSelectMode(false);
       // Store sold assets in localStorage for buy back
-      const soldNow = (data.results || []).map((tx: any) => ({
-        symbol: tx.symbol,
-        amount: tx.amount,
-        price: tx.price,
-        timestamp: tx.timestamp
-      }));
-      const prevSold = JSON.parse(localStorage.getItem("soldPortfolio") || "[]");
-      localStorage.setItem("soldPortfolio", JSON.stringify([...prevSold, ...soldNow]));
-      setSoldPortfolio([...prevSold, ...soldNow]);
+      let prevSold = JSON.parse(localStorage.getItem("soldPortfolio") || "[]");
+      let updatedSold = [...prevSold];
+      (data.results || []).forEach((tx: any) => {
+        // Remove any previous entry for this symbol
+        updatedSold = updatedSold.filter((s: any) => s.symbol !== tx.symbol);
+        // Add the new sale
+        updatedSold.push({
+          symbol: tx.symbol,
+          amount: tx.amount,
+          price: tx.price,
+          actual_price: tx.actual_price,
+          timestamp: tx.timestamp
+        });
+      });
+      localStorage.setItem("soldPortfolio", JSON.stringify(updatedSold));
+      setSoldPortfolio(updatedSold);
+      await handleRefreshPortfolio();
+      await handleRefreshLiquidatedPrices();
       // Optionally, refresh portfolio here
       console.log("Sell response:", data);
     } catch (e: any) {
@@ -259,9 +278,9 @@ export default function Home() {
     try {
       // Prepare buy payload for selected assets
       const buyPayload = soldPortfolio
-        .filter((a: any) => buyBackSelection.includes(a.symbol))
+        .filter((a: any) => buyBackSelection.includes(a.symbol) && a.symbol !== 'USDT')
         .map((a: any) => ({ symbol: a.symbol, amount: a.amount }));
-      const res = await fetch("http://localhost:8000/buy", {
+      const res = await fetch(`${API_URL}/buy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -281,10 +300,10 @@ export default function Home() {
       let updatedSold = [...soldPortfolio];
       (data.results || []).forEach((tx: any) => {
         const sold = soldPortfolio.find((s: any) => s.symbol === tx.symbol);
-        if (sold && !tx.error && tx.usdt_spent > 0) {
-          const pl = (sold.price - (tx.usdt_spent / tx.amount)) * tx.amount;
+        if (sold && !tx.error && tx.actual_price && sold.actual_price && tx.amount) {
+          // Buy back price - sell price, times quantity
+          const pl = (tx.actual_price - sold.actual_price) * tx.amount;
           newPL += pl;
-          // Remove from soldPortfolio after buy back
           updatedSold = updatedSold.filter((s: any) => s.symbol !== tx.symbol);
         }
       });
@@ -292,6 +311,8 @@ export default function Home() {
       setSoldPortfolio(updatedSold);
       localStorage.setItem("realizedPL", newPL.toString());
       localStorage.setItem("soldPortfolio", JSON.stringify(updatedSold));
+      await handleRefreshPortfolio();
+      await handleRefreshLiquidatedPrices();
     } catch (e: any) {
       // Optionally show error
     } finally {
@@ -331,9 +352,9 @@ export default function Home() {
     try {
       // Prepare buy payload for selected assets
       const buyPayload = soldPortfolio
-        .filter((a: any) => buyBackSelection.includes(a.symbol))
+        .filter((a: any) => buyBackSelection.includes(a.symbol) && a.symbol !== 'USDT')
         .map((a: any) => ({ symbol: a.symbol, amount: a.amount }));
-      const res = await fetch("http://localhost:8000/buy", {
+      const res = await fetch(`${API_URL}/buy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -353,11 +374,10 @@ export default function Home() {
       let updatedSold = [...soldPortfolio];
       (data.results || []).forEach((tx: any) => {
         const sold = soldPortfolio.find((s: any) => s.symbol === tx.symbol);
-        if (sold && !tx.error && tx.usdt_spent > 0) {
-          // Use actual_price for both sale and buy
-          const pl = (sold.actual_price - tx.actual_price) * tx.amount;
+        if (sold && !tx.error && tx.actual_price && sold.actual_price && tx.amount) {
+          // Buy back price - sell price, times quantity
+          const pl = (tx.actual_price - sold.actual_price) * tx.amount;
           newPL += pl;
-          // Remove from soldPortfolio after buy back
           updatedSold = updatedSold.filter((s: any) => s.symbol !== tx.symbol);
         }
       });
@@ -367,6 +387,8 @@ export default function Home() {
       localStorage.setItem("soldPortfolio", JSON.stringify(updatedSold));
       setBuyBackSelectMode(false);
       setBuyBackSelection([]);
+      await handleRefreshPortfolio();
+      await handleRefreshLiquidatedPrices();
     } catch (e: any) {
       // Optionally show error
     } finally {
@@ -378,7 +400,8 @@ export default function Home() {
   async function handleRefreshLiquidatedPrices() {
     setRefreshLiquidatedLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/balance", {
+      // Always fetch latest prices for all assets
+      const res = await fetch(`${API_URL}/balance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
@@ -388,8 +411,10 @@ export default function Home() {
       const priceMap: any = {};
       data.forEach((a: any) => { priceMap[a.symbol] = a.price; });
       setBuyBackPrices(priceMap);
+      console.log("[DEBUG] Refreshed liquidated prices:", priceMap);
     } catch (e) {
       // ignore
+      console.error("[DEBUG] handleRefreshLiquidatedPrices error:", e);
     } finally {
       setRefreshLiquidatedLoading(false);
     }
@@ -399,23 +424,33 @@ export default function Home() {
   const totalPortfolioValue = portfolio.reduce((sum, a) => sum + a.value_usdt, 0);
 
   // Calculate total value and P/L for liquidated portfolio
+  // Only include assets that have been sold and NOT yet bought back (i.e., still in soldPortfolio)
   let totalLiquidatedValue = 0;
   let totalLiquidatedPL = 0;
-  soldPortfolio.forEach((asset: any) => {
+  const activeLiquidated = soldPortfolio.filter((asset: any) => asset && asset.symbol !== 'USDT');
+  activeLiquidated.forEach((asset: any) => {
     const currentPrice = buyBackPrices[asset.symbol] || 0;
     const salePrice = asset.actual_price || asset.price;
     totalLiquidatedValue += currentPrice * asset.amount;
     totalLiquidatedPL += (salePrice - currentPrice) * asset.amount;
   });
 
+  // Place this inside the Home component, before the return statement:
+  async function handleBigRefresh() {
+    setLoading(true);
+    await handleRefreshPortfolio();
+    await handleRefreshLiquidatedPrices();
+    setLoading(false);
+  }
+
   // Main screen
   if (!connected) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-bg)] text-[var(--color-text)] font-mono p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f7f7f7] text-[var(--color-text)] font-mono p-4">
         {header}
        
         {/* Connect to Binance Modal/Card */}
-        <div className="card p-8 flex flex-col gap-4 w-full max-w-md items-center shadow-lg">
+        <div className="bg-white rounded-2xl shadow-xl p-10 flex flex-col gap-6 w-full max-w-md items-center border border-gray-200">
           <div className="text-2xl mb-2 flex flex-col items-center">
             <span className="text-[var(--color-accent)] text-4xl mb-2">&#128179;</span>
             Connect to Binance
@@ -441,7 +476,7 @@ export default function Home() {
             />
           </div>
           <button
-            className="btn w-full mt-4 py-2 text-lg font-bold rounded shadow-md disabled:opacity-50"
+            className="btn w-full mt-6 py-3 text-xl font-extrabold rounded-xl shadow-lg disabled:opacity-50 bg-yellow-400 hover:bg-yellow-500 text-black"
             onClick={handleConnect}
             disabled={!apiKey || !apiSecret || loading}
           >
@@ -457,16 +492,40 @@ export default function Home() {
     );
   }
 
+  // In the main return (when connected), after {header} and before the portfolio card, add:
+  {connected && (
+    <div className="w-full max-w-[520px] mx-auto mb-6">
+      <button
+        className="btn w-full py-3 text-xl font-extrabold rounded-xl shadow-lg bg-yellow-400 hover:bg-yellow-500 text-black mb-4"
+        onClick={handleBigRefresh}
+        disabled={loading}
+      >
+        {loading ? 'Refreshing...' : 'Refresh'}
+      </button>
+    </div>
+  )}
+
   // Portfolio screen with Nuke selection
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-bg)] text-[var(--color-text)] font-mono p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f7f7f7] text-[var(--color-text)] font-mono p-4">
       {header}
       {/* Mynance header only, no tabs */}
 
       {/* Top Value Card (Portfolio) */}
-      <div className="w-full max-w-[520px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 md:py-6 mb-6">
+      <div className="w-full max-w-[520px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 md:py-6 mb-6 relative">
+        {/* Refresh button for Portfolio */}
+        {!selectMode && (
+          <button
+            className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-4 py-1 text-base font-bold rounded shadow-md absolute top-4 right-4"
+            onClick={handleRefreshPortfolio}
+            disabled={loading}
+            style={{ minWidth: 90 }}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        )}
         <div className="flex flex-col gap-1">
-          <span className="text-lg font-bold text-black">Est. Total Value</span>
+          <span className="text-lg font-bold text-black">Portfolio Est Total Value</span>
           <span className="text-3xl font-extrabold text-black">{totalPortfolioValue.toLocaleString(undefined, { maximumFractionDigits: 8 })} USDT</span>
           <span className="text-base text-black">{formatUSD(totalPortfolioValue)}</span>
           <span className={`text-base font-bold mt-2 ${plColor(realizedPL)}`}>Realized P/L: {realizedPL >= 0 ? '+' : ''}{realizedPL.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT</span>
@@ -474,16 +533,10 @@ export default function Home() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <button
-            className="btn px-5 py-2 text-base mb-2"
+            className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-5 py-2 text-base mb-2 font-bold rounded shadow-md"
             onClick={startNukeSelection}
             style={{ minWidth: 90 }}
           >Sell</button>
-          <button
-            className="btn px-5 py-2 text-base"
-            onClick={handleRefreshPortfolio}
-            disabled={loading}
-            style={{ minWidth: 90 }}
-          >{loading ? 'Refreshing...' : 'Refresh Portfolio'}</button>
         </div>
       </div>
 
@@ -495,45 +548,53 @@ export default function Home() {
             <span className="text-xl md:text-2xl font-bold text-black w-full max-w-[480px] text-left">Assets</span>
           </div>
           <div className="flex flex-col w-full items-center gap-4 px-1 md:px-0">
-            {portfolio.map(asset => (
-              <label key={asset.symbol} className="w-full max-w-[480px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col sm:flex-row items-center justify-between px-3 md:px-5 py-3 md:py-4 gap-2 md:gap-4">
-                <div className="flex flex-row items-center gap-3">
-                  {/* Placeholder icon */}
-                  <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-[var(--color-text-secondary)] font-bold text-lg border border-gray-200">{asset.symbol[0]}</div>
-                  <div className="flex flex-col items-start gap-0.5">
-                    <div className="flex items-center gap-2">
-                      {selectMode && (
-                        <input
-                          type="checkbox"
-                          checked={selectedAssets.includes(asset.symbol)}
-                          onChange={() => handleAssetSelect(asset.symbol)}
-                          className="accent-yellow-400"
-                        />
-                      )}
-                      <span className="text-base font-bold text-black">{asset.symbol}</span>
+            {portfolio.length === 0 && !loading ? (
+              <div className="w-full max-w-[480px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex items-center justify-center px-5 py-6 text-lg text-gray-500 font-semibold text-center">
+                No assets to show.
+              </div>
+            ) : (
+              portfolio.map((asset: any) => (
+                <label key={asset.symbol} className="w-full max-w-[480px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col sm:flex-row items-center justify-between px-3 md:px-5 py-3 md:py-4 gap-2 md:gap-4">
+                  <div className="flex flex-row items-center gap-3">
+                    {/* Placeholder icon */}
+                    <div className="w-9 h-9 rounded-full bg-yellow-400 flex items-center justify-center text-black font-bold text-lg border border-yellow-400 shadow-sm">
+                      <span role="img" aria-label="coin">🪙</span>
                     </div>
-                    <span className="text-xs text-gray-500">{asset.amount} units @ ${asset.price}</span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <div className="flex items-center gap-2">
+                        {selectMode && asset.symbol !== 'USDT' && (
+                          <input
+                            type="checkbox"
+                            checked={selectedAssets.includes(asset.symbol)}
+                            onChange={() => handleAssetSelect(asset.symbol)}
+                            className="accent-yellow-400"
+                          />
+                        )}
+                        <span className="text-base font-bold text-black">{asset.symbol}</span>
+                      </div>
+                      <span className="text-xs text-gray-500">{asset.amount} units @ ${asset.price}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-col items-end gap-0.5">
-                  <span className="text-xl font-bold text-black">${asset.value_usdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                </div>
-              </label>
-            ))}
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-xl font-bold text-black">${asset.value_usdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  </div>
+                </label>
+              ))
+            )}
           </div>
         </div>
 
         {selectMode && (
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6 w-full justify-center items-center px-2">
             <button
-              className="btn bg-red-600 text-white text-xl font-bold py-4 px-8 rounded shadow-md hover:bg-red-700 transition-all disabled:opacity-50"
+              className="btn bg-yellow-400 hover:bg-yellow-500 text-black text-xl font-bold py-4 px-8 rounded shadow-md hover:bg-yellow-600 transition-all disabled:opacity-50"
               onClick={handleNukeClick}
               disabled={selectedAssets.length === 0 || nukeLoading}
             >
               {nukeLoading ? "Selling..." : `SELL ${selectedAssets.length} ASSET${selectedAssets.length > 1 ? 'S' : ''}`}
             </button>
             <button
-              className="btn bg-gray-700 text-white text-xl font-bold py-4 px-8 rounded shadow-md hover:bg-gray-600 transition-all"
+              className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-4 px-8 rounded shadow-md hover:bg-yellow-600 transition-all"
               onClick={handleCancelNuke}
               disabled={nukeLoading}
             >
@@ -544,24 +605,29 @@ export default function Home() {
         )}
 
         {/* Liquidated Portfolio Section (inline) */}
-        {soldPortfolio.length > 0 && (
+        {activeLiquidated.length > 0 && (
           <div className="w-full flex flex-col items-center mt-10">
-            <div className="w-full max-w-[520px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col items-center justify-center px-3 md:px-6 py-4 md:py-6 mb-6">
-              <span className="text-lg font-bold text-black mb-1">Liquidated Portfolio</span>
-              <span className="text-3xl font-extrabold text-black">{totalLiquidatedValue.toLocaleString(undefined, { maximumFractionDigits: 8 })} USDT</span>
-              <span className="text-base text-black mb-2">{formatUSD(totalLiquidatedValue)}</span>
-              <span className={`text-xl font-bold ${totalLiquidatedPL >= 0 ? 'text-black' : 'text-red-400'}`}>{totalLiquidatedPL >= 0 ? '+' : ''}{totalLiquidatedPL.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT</span>
-              <span className="text-xs text-gray-500 mb-4">Unrealized P/L (if you had held instead of selling)</span>
-              <div className="flex flex-col xs:flex-row gap-2 mb-2 w-full justify-center items-center">
+            <div className="w-full max-w-[520px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col items-center justify-center px-3 md:px-6 py-4 md:py-6 mb-6 relative">
+              {/* Refresh button for Liquidated Portfolio */}
+              {!buyBackSelectMode && (
                 <button
-                  className="btn px-5 py-2 text-base"
+                  className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-4 py-1 text-base font-bold rounded shadow-md absolute top-4 right-4"
                   onClick={handleRefreshLiquidatedPrices}
                   disabled={refreshLiquidatedLoading}
                   style={{ minWidth: 90 }}
-                >{refreshLiquidatedLoading ? 'Refreshing...' : 'Refresh'}</button>
+                >
+                  {refreshLiquidatedLoading ? 'Refreshing...' : 'Refresh'}
+                </button>
+              )}
+              <span className="text-lg font-bold text-black mb-1 w-full text-left">Liquidated Portfolio</span>
+              <span className="text-3xl font-extrabold text-black">{totalLiquidatedValue.toLocaleString(undefined, { maximumFractionDigits: 8 })} USDT</span>
+              <span className="text-base text-black mb-2">{formatUSD(totalLiquidatedValue)}</span>
+              <span className={`text-xl font-bold ${totalLiquidatedPL >= 0 ? 'text-black' : 'text-red-400'}`}>{totalLiquidatedPL >= 0 ? '+' : ''}{totalLiquidatedPL.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT</span>
+              <span className="text-xs text-gray-500 mb-4">Unrealized P/L (for assets you sold but have not yet bought back)</span>
+              <div className="flex flex-col xs:flex-row gap-2 mb-2 w-full justify-center items-center">
                 {!buyBackSelectMode && (
                   <button
-                    className="btn px-5 py-2 text-base"
+                    className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-5 py-2 text-base font-bold rounded shadow-md"
                     onClick={startBuyBackSelection}
                     style={{ minWidth: 90 }}
                   >Buy Back</button>
@@ -570,7 +636,8 @@ export default function Home() {
               {/* Expanded buy back view */}
               {buyBackSelectMode && (
                 <div className="flex flex-col w-full items-center gap-2 md:gap-4 mb-2">
-                  {soldPortfolio.map((asset: any) => {
+                  {activeLiquidated.map((asset: any) => {
+                    if (asset.symbol === 'USDT') return null;
                     const currentPrice = buyBackPrices[asset.symbol] || 0;
                     const salePrice = asset.actual_price || asset.price;
                     const unrealizedPL = (salePrice - currentPrice) * asset.amount;
@@ -580,7 +647,9 @@ export default function Home() {
                       <label key={asset.symbol} className="w-full max-w-[480px] mx-auto bg-white rounded-2xl shadow-md border border-gray-200 flex flex-col sm:flex-row items-center justify-between px-3 md:px-5 py-3 md:py-4 gap-2 md:gap-4">
                         <div className="flex flex-row items-center gap-3">
                           {/* Placeholder icon */}
-                          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-[var(--color-text-secondary)] font-bold text-lg border border-gray-200">{asset.symbol[0]}</div>
+                          <div className="w-9 h-9 rounded-full bg-yellow-400 flex items-center justify-center text-black font-bold text-lg border border-yellow-400 shadow-sm">
+                            <span role="img" aria-label="coin">🪙</span>
+                          </div>
                           <div className="flex flex-col items-start gap-0.5">
                             <div className="flex items-center gap-2">
                               <input
@@ -606,12 +675,12 @@ export default function Home() {
               {buyBackSelectMode && (
                 <div className="flex flex-col xs:flex-row gap-2 justify-end w-full items-center mt-2">
                   <button
-                    className="btn px-5 py-2 text-base bg-blue-600 text-white font-bold rounded shadow-md hover:bg-blue-700 w-full xs:w-auto"
+                    className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-6 rounded shadow-md w-full xs:w-auto"
                     onClick={handleBuyBackClickMain}
                     disabled={buyBackSelection.length === 0 || buyBackLoading}
                   >Buy Back ({buyBackSelection.length})</button>
                   <button
-                    className="btn px-5 py-2 text-base bg-gray-700 text-white font-bold rounded shadow-md hover:bg-gray-600 w-full xs:w-auto"
+                    className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-6 rounded shadow-md w-full xs:w-auto"
                     onClick={handleCancelBuyBack}
                     disabled={buyBackLoading}
                   >Cancel</button>
@@ -633,8 +702,8 @@ export default function Home() {
               Do you want to proceed?
             </div>
             <div className="flex flex-col xs:flex-row gap-2 w-full justify-center items-center">
-              <button className="btn bg-blue-600 text-white font-bold py-2 px-6 rounded shadow-md hover:bg-blue-700 w-full xs:w-auto" onClick={handleBuyBackMain}>Yes, Buy Back</button>
-              <button className="btn bg-gray-700 text-white font-bold py-2 px-6 rounded shadow-md hover:bg-gray-600 w-full xs:w-auto" onClick={handleCancelBuyBack}>Cancel</button>
+              <button className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-6 rounded shadow-md w-full xs:w-auto" onClick={handleBuyBackMain}>Yes, Buy Back</button>
+              <button className="btn bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-6 rounded shadow-md w-full xs:w-auto" onClick={handleCancelBuyBack}>Cancel</button>
             </div>
           </div>
         </div>
