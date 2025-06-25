@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -57,6 +57,9 @@ export default function Home() {
   const [showBuyBackConfirm, setShowBuyBackConfirm] = useState(false);
   const [refreshLiquidatedLoading, setRefreshLiquidatedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'portfolio' | 'liquidated'>('portfolio');
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const apiKeyInputRef = useRef<HTMLInputElement>(null);
+  const apiSecretInputRef = useRef<HTMLInputElement>(null);
 
   // Footer description
   const footerText = "This is a Binance-style portfolio viewer. Not financial advice. For demonstration purposes only.";
@@ -141,6 +144,32 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Helper to require connection before any action
+  function requireConnection(action: () => void) {
+    if (!connected) {
+      setShowLoginModal(true);
+      setTimeout(() => {
+        apiKeyInputRef.current?.focus();
+      }, 100);
+      return;
+    }
+    action();
+  }
+
+  // Modified handlers to require connection
+  function handleRefreshPortfolioWithAuth() {
+    requireConnection(handleRefreshPortfolio);
+  }
+  function handleRefreshLiquidatedPricesWithAuth() {
+    requireConnection(handleRefreshLiquidatedPrices);
+  }
+  function handleSellClickWithAuth() {
+    requireConnection(startNukeSelection);
+  }
+  function handleBuyBackClickWithAuth() {
+    requireConnection(startBuyBackSelection);
   }
 
   // Add a refresh function
@@ -448,46 +477,63 @@ export default function Home() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f7f7f7] text-[var(--color-text)] font-mono p-4">
         {header}
-       
-        {/* Connect to Binance Modal/Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-10 flex flex-col gap-6 w-full max-w-md items-center border border-gray-200">
-          <div className="text-2xl mb-2 flex flex-col items-center">
-            <span className="text-[var(--color-accent)] text-4xl mb-2">&#128179;</span>
-            Connect to Binance
+        <button
+          className="btn w-full max-w-xs py-3 text-xl font-extrabold rounded-xl shadow-lg bg-yellow-400 hover:bg-yellow-500 text-black mb-8"
+          onClick={() => setShowLoginModal(true)}
+        >
+          Login
+        </button>
+        {/* Login Modal */}
+        {showLoginModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-xl p-10 flex flex-col gap-6 w-full max-w-md items-center border border-gray-200">
+              <div className="text-2xl mb-2 flex flex-col items-center">
+                <span className="text-[var(--color-accent)] text-4xl mb-2">&#128179;</span>
+                Connect to Binance
+              </div>
+              <div className="w-full flex flex-col gap-2">
+                <label className="text-sm" htmlFor="apiKey">API Key</label>
+                <input
+                  id="apiKey"
+                  type="text"
+                  ref={apiKeyInputRef}
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  className="p-2 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-accent-dark)] focus:outline-none focus:border-[var(--color-accent)]"
+                  autoComplete="off"
+                />
+                <label className="text-sm mt-2" htmlFor="apiSecret">API Secret</label>
+                <input
+                  id="apiSecret"
+                  type="password"
+                  ref={apiSecretInputRef}
+                  value={apiSecret}
+                  onChange={e => setApiSecret(e.target.value)}
+                  className="p-2 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-accent-dark)] focus:outline-none focus:border-[var(--color-accent)]"
+                  autoComplete="off"
+                />
+              </div>
+              <button
+                className="btn w-full mt-6 py-3 text-xl font-extrabold rounded-xl shadow-lg disabled:opacity-50 bg-yellow-400 hover:bg-yellow-500 text-black"
+                onClick={handleConnect}
+                disabled={!apiKey || !apiSecret || loading}
+              >
+                {loading ? "Connecting..." : "Connect Binance API"}
+              </button>
+              {error && <div className="text-red-400 text-sm mt-2">{error}</div>}
+              <p className="text-xs text-[var(--color-text-secondary)] mt-2 text-center">
+                <span className="block">Your API credentials are stored locally and never shared.</span>
+                <span className="block">Make sure your API has read-only permissions.</span>
+              </p>
+              <button
+                className="btn w-full mt-2 py-2 text-base font-bold rounded-xl shadow bg-gray-200 text-black"
+                onClick={() => setShowLoginModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          <div className="w-full flex flex-col gap-2">
-            <label className="text-sm" htmlFor="apiKey">API Key</label>
-            <input
-              id="apiKey"
-              type="text"
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              className="p-2 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-accent-dark)] focus:outline-none focus:border-[var(--color-accent)]"
-              autoComplete="off"
-            />
-            <label className="text-sm mt-2" htmlFor="apiSecret">API Secret</label>
-            <input
-              id="apiSecret"
-              type="password"
-              value={apiSecret}
-              onChange={e => setApiSecret(e.target.value)}
-              className="p-2 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-accent-dark)] focus:outline-none focus:border-[var(--color-accent)]"
-              autoComplete="off"
-            />
-          </div>
-          <button
-            className="btn w-full mt-6 py-3 text-xl font-extrabold rounded-xl shadow-lg disabled:opacity-50 bg-yellow-400 hover:bg-yellow-500 text-black"
-            onClick={handleConnect}
-            disabled={!apiKey || !apiSecret || loading}
-          >
-            {loading ? "Connecting..." : "Connect Binance API"}
-          </button>
-          {error && <div className="text-red-400 text-sm mt-2">{error}</div>}
-          <p className="text-xs text-[var(--color-text-secondary)] mt-2 text-center">
-            <span className="block">Your API credentials are stored locally and never shared.</span>
-            <span className="block">Make sure your API has read-only permissions.</span>
-          </p>
-        </div>
+        )}
       </div>
     );
   }
@@ -497,7 +543,7 @@ export default function Home() {
     <div className="w-full max-w-[520px] mx-auto mb-6">
       <button
         className="btn w-full py-3 text-xl font-extrabold rounded-xl shadow-lg bg-yellow-400 hover:bg-yellow-500 text-black mb-4"
-        onClick={handleBigRefresh}
+        onClick={handleRefreshPortfolioWithAuth}
         disabled={loading}
       >
         {loading ? 'Refreshing...' : 'Refresh'}
@@ -517,7 +563,7 @@ export default function Home() {
         {!selectMode && (
           <button
             className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-4 py-1 text-base font-bold rounded shadow-md absolute top-4 right-4"
-            onClick={handleRefreshPortfolio}
+            onClick={handleRefreshPortfolioWithAuth}
             disabled={loading}
             style={{ minWidth: 90 }}
           >
@@ -534,7 +580,7 @@ export default function Home() {
         <div className="flex flex-col items-end gap-2">
           <button
             className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-5 py-2 text-base mb-2 font-bold rounded shadow-md"
-            onClick={startNukeSelection}
+            onClick={handleSellClickWithAuth}
             style={{ minWidth: 90 }}
           >Sell</button>
         </div>
@@ -612,7 +658,7 @@ export default function Home() {
               {!buyBackSelectMode && (
                 <button
                   className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-4 py-1 text-base font-bold rounded shadow-md absolute top-4 right-4"
-                  onClick={handleRefreshLiquidatedPrices}
+                  onClick={handleRefreshLiquidatedPricesWithAuth}
                   disabled={refreshLiquidatedLoading}
                   style={{ minWidth: 90 }}
                 >
@@ -628,7 +674,7 @@ export default function Home() {
                 {!buyBackSelectMode && (
                   <button
                     className="btn bg-yellow-400 hover:bg-yellow-500 text-black px-5 py-2 text-base font-bold rounded shadow-md"
-                    onClick={startBuyBackSelection}
+                    onClick={handleBuyBackClickWithAuth}
                     style={{ minWidth: 90 }}
                   >Buy Back</button>
                 )}
